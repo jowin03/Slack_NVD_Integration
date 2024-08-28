@@ -1,92 +1,92 @@
- # Slack-NVD Vulnerability Management Bot
+# Slack-NVD Integration
 
- - This repository contains a Flask-based Slack bot that automates the process of fetching vulnerabilities from the National Vulnerability Database (NVD) and notifying an admin in a Slack channel. The admin can then assign these vulnerabilities to specific users in the Slack workspace.
+## Overview
+ - This repository contains a Flask-based Slack bot that automates the process of fetching vulnerabilities from the National Vulnerability Database (NVD) and notifying an admin in a Slack channel. The admin can then assign these vulnerabilities to specific users in the Slack workspace, allowing them to address the issues.
 
- ## Table of Contents
-  
-  - Features
-  - Requirements
-  - Installation
-  - Configuration
-  - Usage
-  - Handling Rate Limits
-  - Troubleshooting
+### Table of Contents
+ - Features
+ - Requirements
+ -Installation
+ -Configuration
+ - Usage
+ - Handling Rate Limits
+ - Troubleshooting
+ 
+### Features
+ - Fetch Vulnerabilities: Automatically fetch vulnerabilities from the NVD API.
+ - Notify Admin: Send notifications to the admin with options to assign the vulnerability to users.
+ - Forward to User: Forward the vulnerability details to selected users in the Slack workspace.
+ - Interactive Messages: Support for interactive messages in Slack (e.g., dropdowns and buttons).
+ - Task Confirmation: Users can confirm the resolution of vulnerabilities, notifying the admin of task completion.
+ - Logging: Detailed logging for tracking operations and debugging issues.
 
-  ## Features
+### Requirements
+ - Python 3.8+
+ - Flask
+ - Slack_SDK
+ - Requests
+ - Schedule
+ - Logging
 
-  - Fetch Vulnerabilities: Automatically fetch vulnerabilities from the NVD API.
-  - Notify Admin: Send notifications to the admin with options to assign the vulnerability to users.
-  - Forward to User: Forward the vulnerability details to a selected user in the Slack workspace.
-  - Interactive Messages: Support for interactive messages in Slack (e.g.,dropdowns and buttons).
+### Installation
 
-  ## Requirements
+#### Create a Virtual Environment
+ - python3 -m venv venv
+ - source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 
-  - Python 3.8+
-  - Flask
-  - Slack_Sdk
-  - Requests
-  - Schedule
+#### Install Dependencies
+ - pip install -r requirements.txt
 
-  ## Installation
+#### Set Up the Environment
+1. Configuration File:
+ - Create a config.json file in the root directory of your project.
+ - Include the following configurations:
+- {
+    "slack_bot_token": "YOUR_SLACK_BOT_TOKEN",
+    "admin_user_id": "ADMIN_SLACK_USER_ID",
+    
+    "nvd_api_url": "https://services.nvd.nist.gov/rest/json/cves/2.0"
+ }
 
-  ### Create a Virtual Environment:
-  - python3 -m venv venv.
-  - source venv/bin/activate.
+2. Environment Variables:
+ - If using a .env file for environment variables (optional):
+ - SLACK_BOT_TOKEN=YOUR_SLACK_BOT_TOKEN
+ - ADMIN_USER_ID=ADMIN_SLACK_USER_ID
+ - NVD_API_URL=https://services.nvd.nist.gov/rest/json/cves/2.0
+ - You can use the python-dotenv package to load these variables.
 
-  ### Install Dependencies:
-  - pip install -r requirements.txt
+### Configuration
+1. Logging Configuration:
+ - Logging is set up to provide detailed output during the script's operation. Modify the logging level as needed in the script:
+ - logging.basicConfig(level=logging.DEBUG)
+ - logger = logging.getLogger(__name__)
 
-  ## Configuration
+2. Scheduling:
+ - The script uses schedule to run a job every minute at 00:50 to fetch vulnerabilities and notify the admin:
+ - schedule.every().minute.at(":50").do(job)
 
-  ### Create a Slack App:
-  - Go to Slack API and create a new app.
-  - Enable the following OAuth Scopes:
-    - channels:read
-    - chat:write
-    - users:read
-    - Commands
-  - Install the app to your workspace and note the OAuth Token.
+### Usage
+1. Running the Flask Application:
+ - Start the Flask server and the scheduler thread:
+ - python main.py
 
-  ### Set Up config.json:
-   - Create a config.json file in the root directory with the following content:
-   - { 
-        “slack_bot_token": "xoxb-your-slack-bot-token",
-        "admin_channel": "#admin-channel",
-        "nvd_api_url": "https://services.nvd.nist.gov/rest/json/cves/2.0",
-        "port": 3000
-    }
-   - Replace the placeholder values with your actual Slack Bot Token, the Slack channel for the admin notifications, and the port number you want the Flask app to run on.
+2. Handling Slack Events:
+ - The Flask app listens for Slack events at the /slack/events endpoint. Ensure this endpoint is correctly set in your Slack app's event subscription settings.
 
-  ### Expose Flask App:
-  - If you are testing locally, you may need to expose your local Flask app to the internet using a tool like ngrok.
-  - Update the Slack app's Interactivity settings with the ngrok URL.
+3. Interactive Modals:
+ - The admin will receive vulnerability notifications with a "Select Users" button to assign tasks.
+ - Upon selection, users will receive a message with the details and a "Reply" button to confirm resolution.
 
-  ## Usage:
+### Handling Rate Limits
+ - The script includes basic error handling for Slack API rate limits. In case of rate limiting, it will log an error and you may need to implement a backoff strategy depending on your Slack workspace's usage.
 
-  ### Start the Flask App:
-  - python app.py or whatever you have saved your script in your system.
-  
-  ### Interact with the Bot:
-   - The bot will automatically fetch vulnerabilities and notify the admin in the specified Slack channel.
-   - The admin can assign the vulnerability to a user by selecting them from a dropdown list.
-   - The selected user will receive a notification in Slack with the vulnerability details and an option to mark it as
-resolved.
+### Troubleshooting
+ #### Error Sending Messages:
+ - Ensure the Slack Bot Token is valid and has the required permissions.
+ - Check the config.json for correct user IDs and API URLs.
+ 
+ #### Modal Errors:
+ - If encountering issues with Slack modals, ensure the payload conforms to Slack's API specifications and that required blocks are included.
 
-  ### Scheduling:
-  - The script is set up to fetch vulnerabilities every hour at the 15th minute (e.g., 00:15, 01:15, etc.).
-  - You can adjust the scheduling in the job function within app.py.
-
-  ## Handling Rate Limits 
-  - The Slack API has rate limits on requests. If your app hits the ratelimit, the script will automatically retry after the specified time (as
-provided by the Retry-After header in Slack's response).
-
-  ## Troubleshooting
-  ### Interactive Messages Resetting:
-  - If the selected user resets after making a choice, ensure that the bot responds properly to Slack's
-interactive message payloads.
-  ### Missing Events:
-  - Ensure that your Flask endpoint (/slack/events) is publicly accessible and correctly set up in your Slack app's
-Interactivity settings.
-  ### Rate Limits: 
-  - If you encounter rate limits frequently, consider reducing the frequency of your requests or optimizing your user
-fetching logic.
+#### Missing Triggers:
+ - If the trigger_id is missing in Slack events, verify that the correct scopes and permissions are granted to your Slack app.
