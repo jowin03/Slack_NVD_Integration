@@ -1,8 +1,7 @@
 {
     "slack_bot_token": "your_slack_bot_token",
-    "admin_channel": "your_admin_channel",
+    "admin_channel_id": "your_admin_channel_id",
     "nvd_api_url": "https://services.nvd.nist.gov/rest/json/cves/2.0",
     "port": "your_port_number",
     "nvd_api_token" : " your_nvd_api_token",
-    "admin_user" : "your_admin_user"
 }

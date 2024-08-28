@@ -291,7 +291,6 @@ def handle_confirm(event, user_id):
 
     return jsonify({'status': 'ok'})
 
-
 def filter_out_bots(selected_users):
     """Filter out bot users from the selected users."""
     filtered_users = []
@@ -300,8 +299,6 @@ def filter_out_bots(selected_users):
         if not user_info['user']['is_bot']:
             filtered_users.append(user)
     return filtered_users
-
-
 
 def send_completion_message(user_id):
     """Send a completion message to the user."""
