@@ -8,6 +8,7 @@ import schedule
 import time
 import logging
 
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ with open('config.json') as f:
 SLACK_BOT_TOKEN = config['slack_bot_token']
 ADMIN_CHANNEL_ID = config['admin_channel_id']
 NVD_API_URL = config['nvd_api_url']
-PORT = config['port']
+
 
 client = WebClient(token=SLACK_BOT_TOKEN)
 
@@ -74,8 +75,8 @@ def send_message_to_admin(vulnerability):
     except SlackApiError as e:
         logger.error(f"Error sending message: {e.response['error']}")
 
-def send_message_to_user(user, description):
-    """Send a vulnerability message to a specific user."""
+def send_message_to_user(user, original_description, admin_description):
+    """Send a vulnerability message to a specific user, including the original and admin's description."""
     message = {
         "channel": user,
         "blocks": [
@@ -84,7 +85,15 @@ def send_message_to_user(user, description):
                 "block_id": "vulnerability_description",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"Vulnerability Details:\n\n{description}"
+                    "text": f"*Vulnerability Details:*\n\n{original_description}"
+                }
+            },
+            {
+                "type": "section",
+                "block_id": "admin_description",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Admin's Note:*\n\n{admin_description}"
                 }
             },
             {
@@ -101,15 +110,16 @@ def send_message_to_user(user, description):
                 ]
             }
         ],
-        "text": "Vulnerability Details"
+        "text": "Vulnerability and Admin Details"
     }
     try:
         response = client.chat_postMessage(**message)
         logger.debug(f"Message sent to {user}: {response}")
         # Track the message ID or vulnerability ID to avoid resending
-        resolved_vulnerabilities.add(description)
+        resolved_vulnerabilities.add(original_description)
     except SlackApiError as e:
         logger.error(f"Error sending message: {e.response['error']}")
+
 
 def job():
     """Scheduled job to fetch vulnerabilities and notify the admin with pagination."""
@@ -179,22 +189,30 @@ def slack_events():
 
     return jsonify({'status': 'ok'})
 
-
 def handle_view_submission(payload):
-    """Handle view submission."""
+    """Handle view submission for user selection and remediation details."""
     view = payload.get('view', {})
     callback_id = view.get('callback_id')
     try:
         if callback_id == 'user_selection_modal':
             selected_users = get_selected_users_from_view(view.get('state', {}).get('values', {}))
-            description = get_description_from_view(view.get('state', {}).get('values', {}))
+            admin_description = get_description_from_view(view.get('state', {}).get('values', {}))
+            original_description = "This is the original vulnerability description that should be retrieved."
+
             if not selected_users:
                 logger.debug("No users selected.")
                 return jsonify({'status': 'ok'})
             logger.debug(f"Selected Users: {selected_users}")
-            logger.debug(f"Description: {description}")
+            logger.debug(f"Original Description: {original_description}")
+            logger.debug(f"Admin Description: {admin_description}")
             for user in selected_users:
-                send_message_to_user(user, description)
+                send_message_to_user(user, original_description, admin_description)
+            return jsonify({'status': 'ok'})
+        elif callback_id == 'remediation_submission_modal':
+            remediation_details = get_remediation_details_from_view(view.get('state', {}).get('values', {}))
+            user_id = payload['user']['id']
+            send_completion_message(user_id, remediation_details)
+            send_admin_notification(user_id, remediation_details)
             return jsonify({'status': 'ok'})
         else:
             logger.debug(f"Unhandled view_submission callback_id: {callback_id}")
@@ -203,6 +221,12 @@ def handle_view_submission(payload):
         logger.error(f"Error in view submission: {str(e)}")
         return jsonify({'status': 'error', 'message': 'Failed to process submission'}), 500
 
+def get_remediation_details_from_view(values):
+    """Retrieve remediation details from the view state."""
+    for block_id, block_values in values.items():
+        if 'remediation_input' in block_values:
+            return block_values['remediation_input']['value']
+    return "No remediation details provided."
 
 
 def get_selected_users_from_view(values):
@@ -279,17 +303,54 @@ def handle_user_selection(event):
         logger.error("Trigger ID is missing in the event")
         return jsonify({'status': 'error', 'message': 'Trigger ID missing'}), 400
 
+
 def handle_confirm(event, user_id):
-    """Handle confirmation action."""
-    logger.info(f"User {user_id} confirmed the vulnerability resolution.")
+    """Handle confirmation action by opening a modal for remediation details."""
+    trigger_id = event.get('trigger_id')
+    if trigger_id:
+        return open_remediation_modal(trigger_id)
+    else:
+        logger.error("Trigger ID is missing in the event")
+        return jsonify({'status': 'error', 'message': 'Trigger ID missing'}), 400
     
-    # Notify the user that the task is completed
-    send_completion_message(user_id)
 
-    # Notify the admin that the task has been completed
-    send_admin_notification(user_id)
-
-    return jsonify({'status': 'ok'})
+def open_remediation_modal(trigger_id):
+    """Open a modal in Slack to collect remediation details."""
+    modal_view = {
+        "type": "modal",
+        "callback_id": "remediation_submission_modal",
+        "title": {"type": "plain_text", "text": "Remediation Details"},
+        "blocks": [
+            {
+                "type": "input",
+                "block_id": "remediation_block",
+                "label": {"type": "plain_text", "text": "Describe how you addressed the vulnerability"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "remediation_input",
+                    "multiline": True,
+                    "placeholder": {"type": "plain_text", "text": "Enter the remediation details"}
+                }
+            }
+        ],
+        "submit": {"type": "plain_text", "text": "Submit"}
+    }
+    headers = {
+        "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
+        "Content-Type": "application/json; charset=utf-8"
+    }
+    payload = {
+        "trigger_id": trigger_id,
+        "view": modal_view
+    }
+    try:
+        response = requests.post("https://slack.com/api/views.open", headers=headers, data=json.dumps(payload))
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        logger.debug(f"Remediation modal response: {response.json()}")
+        return jsonify({'status': 'Modal opened successfully'}), 200
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"Error opening remediation modal: {e.response.text}")
+        return jsonify({'status': 'Error opening modal'}), 500
 
 def filter_out_bots(selected_users):
     """Filter out bot users from the selected users."""
@@ -300,28 +361,30 @@ def filter_out_bots(selected_users):
             filtered_users.append(user)
     return filtered_users
 
-def send_completion_message(user_id):
-    """Send a completion message to the user."""
+def send_completion_message(user_id, remediation_details):
+    """Send a completion message to the user with their remediation details."""
     message = {
         "channel": user_id,
-        "text": "You have successfully completed the task.",
+        "text": f"You have successfully completed the task. Your remediation details: {remediation_details}",
     }
     try:
         client.chat_postMessage(**message)
     except SlackApiError as e:
         logger.error(f"Error sending completion message: {e.response['error']}")
 
-def send_admin_notification(user_id):
-    """Notify the admin that the user has completed the task."""
+
+def send_admin_notification(user_id, remediation_details):
+    """Notify the admin that the user has completed the task with remediation details."""
     message = {
         "channel": ADMIN_CHANNEL_ID,
-        "text": f"User <@{user_id}> has completed the task.",
+        "text": f"User <@{user_id}> has completed the task. Remediation details: {remediation_details}",
     }
     try:
         client.chat_postMessage(**message)
     except SlackApiError as e:
         logger.error(f"Error sending admin notification: {e.response['error']}")
 
+
 if __name__ == '__main__':
     threading.Thread(target=run_scheduler).start()
-    app.run(port=PORT)
+    app.run(port=3000)
